@@ -4,8 +4,8 @@
     "cavity_coupling": 0.02,
     "use_rwa": true,
     "number_of_cavity_states": 2,
-    "kappa": 0.005,
-    "gamma": 0.05,
+    "kappa": 0.0,
+    "gamma": 5e-07,
     "energies": [
         [
             0.0,
