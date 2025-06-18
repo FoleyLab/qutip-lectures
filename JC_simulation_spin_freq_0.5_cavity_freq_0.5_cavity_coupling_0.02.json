@@ -5,8 +5,14 @@
     "use_rwa": true,
     "number_of_cavity_states": 2,
     "kappa": 0.0,
-    "gamma": 5e-07,
+    "gamma": 5e-06,
     "energies": [
+        [
+            0.0,
+            0.48,
+            0.52,
+            1.0
+        ],
         [
             0.0,
             0.48,
