@@ -43,6 +43,7 @@ class HolsteinTavisCummings:
         if self.N_vib > 1:
             self.a = destroy(self.N_vib) # vibrational lowering operator
             self.ap = self.a.dag() # vibrational raising operator
+            self.Ivib = qeye(self.N_vib)  # identity operator for vibrational modes
 
 
         # Operators for cavity mode
@@ -52,11 +53,21 @@ class HolsteinTavisCummings:
         # Create identities for each space
         self.Iq = qeye(2)
         self.Icav = qeye(self.N_cav)
-        self.Ivib = qeye(self.N_vib)
+
 
         # Note on Tensor structure:
         # [Q1, Q2, V1, V2, Cav]
 
+        # let's build base operators for the full Hilbert space
+        if self.N_vib > 1:  # full Hilbert space includes vibrational
+            self.sigmaz_1 = tensor(self.sz, self.Iq, self.Ivib, self.Ivib, self.Icav)
+            self.sigmaz_2 = tensor(self.Iq, self.sz, self.Ivib, self.Ivib, self.Icav)
+            self.number_cavity = tensor(self.Iq, self.Iq, self.Ivib, self.Ivib, self.b.dag() * self.b)
+
+        else:  # full Hilbert space does not include vibrational modes
+            self.sigmaz_1 = tensor(self.sz, self.Iq, self.Icav)
+            self.sigmaz_2 = tensor(self.Iq, self.sz, self.Icav)
+            self.number_cavity = tensor(self.Iq, self.Iq, self.b.dag() * self.b)
 
     def build_qubit_dipole_operator(self):
         """ method to build the dipole operator on a single qubit subspace.
@@ -83,8 +94,14 @@ class HolsteinTavisCummings:
         self.qubit_2_dipole_operator += self.qubit_2_dipole_moments['mu_eg'] * (sig_p + sig_m)
 
         # Build the full dipole operator on the full Hilbert space
-        self.dipole_operator_q1 = tensor(self.qubit_1_dipole_operator, self.Iq, self.Ivib, self.Ivib, self.Icav)
-        self.dipole_operator_q2 = tensor(self.Iq, self.qubit_2_dipole_operator, self.Ivib, self.Ivib, self.Icav)
+        if self.N_vib > 1: # full hilbert space includes vibrational modes
+            self.dipole_operator_q1 = tensor(self.qubit_1_dipole_operator, self.Iq, self.Ivib, self.Ivib, self.Icav)
+            self.dipole_operator_q2 = tensor(self.Iq, self.qubit_2_dipole_operator, self.Ivib, self.Ivib, self.Icav)
+
+        else: # full hilbert space does not include vibrational modes
+            self.dipole_operator_q1 = tensor(self.qubit_1_dipole_operator, self.Iq,  self.Icav)
+            self.dipole_operator_q2 = tensor(self.Iq, self.qubit_2_dipole_operator, self.Icav)
+
         self.dipole_operator = self.dipole_operator_q1 + self.dipole_operator_q2
 
     def build_qubit_hamiltonians(self):
@@ -98,9 +115,13 @@ class HolsteinTavisCummings:
             self.H_q1_individual = self.w_q1 * (self.sp * self.sm + self.qubit_zero_point)
             self.H_q2_individual = self.w_q2 * (self.sp * self.sm + self.qubit_zero_point)
 
+        if self.N_vib > 1:  # full Hilbert space includes vibrational modes
+            self.H_q1 = tensor(self.H_q1_individual, self.Iq, self.Ivib, self.Ivib, self.Icav)
+            self.H_q2 = tensor(self.Iq, self.H_q2_individual, self.Ivib, self.Ivib, self.Icav)
+        else:  # full Hilbert space does not include vibrational modes
+            self.H_q1 = tensor(self.H_q1_individual, self.Iq, self.Icav)
+            self.H_q2 = tensor(self.Iq, self.H_q2_individual, self.Icav)
 
-        self.H_q1 = tensor(self.H_q1_individual, self.Iq, self.Ivib, self.Ivib, self.Icav)
-        self.H_q2 = tensor(self.Iq, self.H_q2_individual, self.Ivib, self.Ivib, self.Icav)
         self.H_qubit = self.H_q1 + self.H_q2
 
     def build_vibrational_hamiltonians(self):
@@ -112,12 +133,15 @@ class HolsteinTavisCummings:
             self.H_vib2 = tensor(self.Iq, self.Iq, self.Ivib, self.H_vib2_individual, self.Icav)
             self.H_vibrational = self.H_vib1 + self.H_vib2
         else:
-            self.H_vibrational = 0 * tensor(self.Iq, self.Iq, self.Ivib, self.Ivib, self.Icav)  # If N_vib is 1, no vibrational modes, so zeros
+            self.H_vibrational = 0 
 
     def build_cavity_hamiltonian(self):
         """ Method to build the cavity Hamiltonian on the full Hilbert space."""
         self.H_cav_individual = self.w_cav * (self.bp * self.b + self.cavity_zero_point)
-        self.H_cav = tensor(self.Iq, self.Iq, self.Ivib, self.Ivib, self.H_cav_individual)
+        if self.N_vib > 1: # full Hilbert space includes vibrational modes
+            self.H_cav = tensor(self.Iq, self.Iq, self.Ivib, self.Ivib, self.H_cav_individual)
+        else: # full Hilbert space does not include vibrational modes
+            self.H_cav = tensor(self.Iq, self.Iq, self.H_cav_individual)
 
     def build_qubit_vibrational_coupling(self):
         """ Method to build the qubit-vibrational coupling Hamiltonians on the full Hilbert space."""
@@ -137,7 +161,7 @@ class HolsteinTavisCummings:
 
         else:
             # If N_vib is 1, no vibrational modes, so no coupling
-            self.H_qubit_vibrational_coupling = 0 * tensor(self.Iq, self.Iq, self.Ivib, self.Ivib, self.Icav)  # zero operator for the coupling term
+            self.H_qubit_vibrational_coupling = 0 
 
     def build_qubit_cavity_coupling(self, pauli_fierz=False, dse_term=False, simple_g = False):
         """ Method to build the qubit-cavity bilinear coupling Hamiltonians on the full Hilbert space.
@@ -156,15 +180,28 @@ class HolsteinTavisCummings:
             _cavity_excitation = self.b + self.bp
             _qubit_1_d_operator = np.sqrt(self.w_q1/2) * self.lambda_1 * self.dipole_operator_q1
             _qubit_2_d_operator = np.sqrt(self.w_q2/2) * self.lambda_2 * self.dipole_operator_q2
-            self.H_q1_cav = tensor(_qubit_1_d_operator, self.Iq, self.Ivib, self.Ivib, _cavity_excitation)
-            self.H_q2_cav = tensor(self.Iq, _qubit_2_d_operator, self.Ivib, self.Ivib, _cavity_excitation)
+
+            if self.N_vib > 1:  # full Hilbert space includes vibrational modes
+                self.H_q1_cav = tensor(_qubit_1_d_operator, self.Iq, self.Ivib, self.Ivib, _cavity_excitation)
+                self.H_q2_cav = tensor(self.Iq, _qubit_2_d_operator, self.Ivib, self.Ivib, _cavity_excitation)
+
+            else:  # full Hilbert space does not include vibrational modes
+                self.H_q1_cav = tensor(_qubit_1_d_operator, self.Iq, _cavity_excitation)
+                self.H_q2_cav = tensor(self.Iq, _qubit_2_d_operator, _cavity_excitation)
+
             self.H_qubit_cavity_coupling = self.H_q1_cav + self.H_q2_cav
 
             if dse_term:
                 _d1 = self.lambda_1 * self.dipole_operator_q1
                 _d2 = self.lambda_2 * self.dipole_operator_q2
-                d1 = tensor(_d1, self.Iq, self.Ivib, self.Ivib, self.Icav)
-                d2 = tensor(self.Iq, _d2, self.Ivib, self.Ivib, self.Icav)
+
+                if self.N_vib > 1:  # full Hilbert space includes vibrational modes
+                    d1 = tensor(_d1, self.Iq, self.Ivib, self.Ivib, self.Icav)
+                    d2 = tensor(self.Iq, _d2, self.Ivib, self.Ivib, self.Icav)
+                else:  # full Hilbert space does not include vibrational modes
+                    d1 = tensor(_d1, self.Iq, self.Icav)
+                    d2 = tensor(self.Iq, _d2, self.Icav)
+
                 self.H_dipole_self_energy = 0.5 * (d1 + d2) @ (d1 + d2)
 
         else:
@@ -182,10 +219,17 @@ class HolsteinTavisCummings:
                 _g1 = np.sqrt(self.w_q1/2) * self.lambda_1 * self.qubit_1_dipole_operator[0,1]
                 _g2 = np.sqrt(self.w_q2/2) * self.lambda_2 * self.qubit_2_dipole_operator[0,1]
 
-            _t1a = tensor(_g1 * self.sp, self.Iq, self.Ivib, self.Ivib, self.b)
-            _t1b = tensor(_g1 * self.sm, self.Iq, self.Ivib, self.Ivib, self.bp)
-            _t2a = tensor(self.Iq, _g2 * self.sp, self.Ivib, self.Ivib, self.b)
-            _t2b = tensor(self.Iq, _g2 * self.sm, self.Ivib, self.Ivib, self.bp)
+            # Build the coupling terms on the full Hilbert space
+            if self.N_vib > 1:  # full Hilbert space includes vibrational modes
+                _t1a = tensor(_g1 * self.sp, self.Iq, self.Ivib, self.Ivib, self.b)
+                _t1b = tensor(_g1 * self.sm, self.Iq, self.Ivib, self.Ivib, self.bp)
+                _t2a = tensor(self.Iq, _g2 * self.sp, self.Ivib, self.Ivib, self.b)
+                _t2b = tensor(self.Iq, _g2 * self.sm, self.Ivib, self.Ivib, self.bp)
+            else:  # full Hilbert space does not include vibrational modes
+                _t1a = tensor(_g1 * self.sp, self.Iq, self.b)
+                _t1b = tensor(_g1 * self.sm, self.Iq, self.bp)
+                _t2a = tensor(self.Iq, _g2 * self.sp, self.b)
+                _t2b = tensor(self.Iq, _g2 * self.sm, self.bp)
 
             self.H_q1_cav = _t1a + _t1b
             self.H_q2_cav = _t2a + _t2b
@@ -194,12 +238,12 @@ class HolsteinTavisCummings:
 
     def build_hamiltonian(self):
         self.build_qubit_hamiltonians()
-        self.build_vibrational_hamiltonians()
         self.build_cavity_hamiltonian()
-        self.build_qubit_vibrational_coupling()
         self.build_qubit_cavity_coupling(self.pauli_fierz, self.dse_term, self.simple_g)
         # Combine all parts to form the total Hamiltonian
         if self.N_vib > 1:
+            self.build_vibrational_hamiltonians()
+            self.build_qubit_vibrational_coupling()
             self.H_total = self.H_qubit + self.H_vibrational + self.H_cav + self.H_qubit_vibrational_coupling + self.H_qubit_cavity_coupling
         else: # the vibrational terms are zero anyway, but also fine to just not add them!
             self.H_total = self.H_qubit + self.H_cav + self.H_qubit_cavity_coupling
