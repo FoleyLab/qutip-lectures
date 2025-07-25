@@ -28,6 +28,7 @@ class HolsteinTavisCummings:
         self.cavity_zero_point = params.get('cavity_zero_point', 0.0)  # zero-point energy of the cavity mode
         self.vibrational_zero_point = params.get('vibrational_zero_point', 0.0)  # zero-point energy of the vibrational modes
         self.qubit_zero_point = params.get('qubit_zero_point', 0.0)  # zero-point energy of the qubits
+        self.include_cavity = params.get('include_cavity', False)  # whether to include the cavity in polaron basis
 
 
         
@@ -237,7 +238,106 @@ class HolsteinTavisCummings:
             self.H_q2_cav = _t2a + _t2b
             self.H_qubit_cavity_coupling = self.H_q1_cav + self.H_q2_cav
 
+    def build_polaron_basis(self):
+        """ Method to build the polaron basis for the system."""
+        #Build Hamitonian with qubit and vibrations, exclude cavity, get eigenvalues
+        # self.H_pt = self.H_qubit + self.H_vibrational + self.H_qubit_vibrational_coupling 
+        # self.H_pt = self.H_qubit + self.H_vibrational + self.H_qubit_vibrational_coupling + self.H_cav
+        # self.vals, self.vecs = self.H_pt.eigenstates()
 
+        if self.include_cavity:
+            self.H_pt = self.H_qubit + self.H_vibrational + self.H_qubit_vibrational_coupling + self.H_cav
+            self.vals, self.vecs = self.H_pt.eigenstates()
+            self.H_pt += self.H_qubit_cavity_coupling
+        
+        else:
+            self.H_pt = self.H_qubit + self.H_vibrational + self.H_qubit_vibrational_coupling
+            self.vals, self.vecs = self.H_pt.eigenstates()
+            #add cavity Hamiltonian and qubit-cavity coupling to Hamiltonian
+            self.H_pt += self.H_qubit_cavity_coupling + self.H_cav
+
+        #Build matrix from qubit eigenvectors
+        self.vecs_new = [vec.full() for vec in self.vecs]
+        self.H_vecs = Qobj(np.hstack(self.vecs_new),dims=self.H_pt.dims)
+
+        #Perform polaron transformation
+        self.H_p = self.H_vecs.dag() * self.H_pt * self.H_vecs
+        
+    @staticmethod
+    def step_t(w1, w2, t0, t):
+        """
+        Step function that goes from w1 to w2 at time t0
+        as a function of t. 
+        """
+        return w1 + (w2 - w1) * (t > t0)
+
+    def w1_t(self, t, T0_1, T_gate_1):
+        return self.w_q1 + self.step_t(0.0, self.w_cav-self.w_q1, T0_1, t) - self.step_t(0.0, self.w_cav-self.w_q1, T0_1+T_gate_1, t)
+    
+    def w2_t(self, t, T0_2, T_gate_2):
+        return self.w_q2 + self.step_t(0.0, self.w_cav-self.w_q2, T0_2, t) - self.step_t(0.0, self.w_cav-self.w_q2, T0_2+T_gate_2, t)
+
+    def build_polaron_basis_t(self, t, t1, t_gate_1, t2, t_gate_2, return_vectors=False):
+        """Method to build the polaron basis for the system at a given time t.
+
+        Args:
+            t (float): Current time in the simulation.
+            t1 (float): Time at which the first qubit frequency changes.
+            t_gate_1 (float): Duration of the first qubit frequency change.
+            t2 (float): Time at which the second qubit frequency changes.
+            t_gate_2 (float): Duration of the second qubit frequency change.
+            return_vectors (bool): If True, return the eigenvectors of the polaron Hamiltonian.
+        Returns:
+            H_polaron (Qobj): The polaron Hamiltonian at time t.
+            if return_vectors is True:
+                H_vectors (Qobj): The eigenvectors of the polaron Hamiltonian.
+        """
+
+        H1 = -0.5 * self.w1_t(t, t1, t_gate_1) * self.sigmaz_1
+        H2 = -0.5 * self.w2_t(t, t2, t_gate_2) * self.sigmaz_2
+
+        #build polaron transformation Hamiltonian
+        #self.H_change = H1 + H2 + self.H_vibrational + self.H_qubit_vibrational_coupling #+ self.H_cav
+        #self.values, self.vectors = self.H_change.eigenstates()
+
+        #add cavity Hamiltonian and qubit-cavity coupling to Hamiltonian
+        #self.H_change += self.H_qubit_cavity_coupling + self.H_cav
+
+        self.H_change = H1 + H2 + self.H_vibrational + self.H_qubit_vibrational_coupling + self.H_cav + self.H_qubit_cavity_coupling
+
+        #Build matrix from qubit eigenvectors
+        #self.vectors_new = [vec.full() for vec in self.vectors]
+        #self.H_vectors = Qobj(np.hstack(self.vectors_new),dims=self.H_change.dims)
+
+        #Perform polaron transformation
+        #self.H_polaron = self.H_vectors.dag() * self.H_change * self.H_vectors
+        self.H_polaron = self.H_vecs.dag() * self.H_change * self.H_vecs
+
+        if return_vectors:
+            return self.H_polaron, self.H_vecs
+        else:
+            return self.H_polaron
+        
+    def build_time_dependent_bare_Hamiltonian(self, t, t1, t_gate_1, t2, t_gate_2):
+        """Method to build the time-dependent bare Hamiltonian for the system at a given time t.
+
+        Args:
+            t (float): Current time in the simulation.
+            t1 (float): Time at which the first qubit frequency changes.
+            t_gate_1 (float): Duration of the first qubit frequency change.
+            t2 (float): Time at which the second qubit frequency changes.
+            t_gate_2 (float): Duration of the second qubit frequency change.
+            return_vectors (bool): If True, return the eigenvectors of the polaron Hamiltonian.
+        Returns:
+            H_bare (Qobj): The bare Hamiltonian at time t.
+        """
+        H1 = -0.5 * self.w1_t(t, t1, t_gate_1) * self.sigmaz_1
+        H2 = -0.5 * self.w2_t(t, t2, t_gate_2) * self.sigmaz_2
+
+        self.H_bare = H1 + H2 + self.H_vibrational + self.H_qubit_vibrational_coupling + self.H_qubit_cavity_coupling + self.H_cav
+
+        return self.H_bare
+    
     def build_hamiltonian(self):
         self.build_qubit_hamiltonians()
         self.build_cavity_hamiltonian()
@@ -253,68 +353,6 @@ class HolsteinTavisCummings:
         self.eigenvalues, self.eigenstates = self.H_total.eigenstates()
         self.build_polaron_basis()
 
-    def build_polaron_basis(self):
-        """ Method to build the polaron basis for the system."""
-        #Build Hamitonian with qubit and vibrations, exclude cavity, get eigenvalues
-        self.H_pt = self.H_qubit + self.H_vibrational + self.H_qubit_vibrational_coupling 
-        self.H_pt = self.H_qubit + self.H_vibrational + self.H_qubit_vibrational_coupling + self.H_cav
-        self.vals, self.vecs = self.H_pt.eigenstates()
-
-        #add cavity Hamiltonian and qubit-cavity coupling to Hamiltonian
-        self.H_pt += self.H_qubit_cavity_coupling
-
-        #Build matrix from qubit eigenvectors
-        self.vecs_new = [vec.full() for vec in self.vecs]
-        self.H_vecs = Qobj(np.hstack(self.vecs_new),dims=self.H_pt.dims)
-
-        #Perform polaron transformation
-        self.H_p = self.H_vecs.dag() * self.H_pt * self.H_vecs
-    
-    @staticmethod
-    def step_t(w1, w2, t0, t):
-        """
-        Step function that goes from w1 to w2 at time t0
-        as a function of t. 
-        """
-        return w1 + (w2 - w1) * (t > t0)
-
-    def w1_t(self, t, T0_1, T_gate_1):
-        return self.w_q1 + self.step_t(0.0, self.w_cav-self.w_q1, T0_1, t) - self.step_t(0.0, self.w_cav-self.w_q1, T0_1+T_gate_1, t)
-    
-    def w2_t(self, t, T0_2, T_gate_2):
-        return self.w_q2 + self.step_t(0.0, self.w_cav-self.w_q2, T0_2, t) - self.step_t(0.0, self.w_cav-self.w_q2, T0_2+T_gate_2, t)
-
-    def build_polaron_basis_t(self, t, t1, t_gate_1, t2, t_gate_2):
-        """Method to build the polaron basis for the system at a given time t.
-
-        Args:
-            t (float): Current time in the simulation.
-            t1 (float): Time at which the first qubit frequency changes.
-            t_gate_1 (float): Duration of the first qubit frequency change.
-            t2 (float): Time at which the second qubit frequency changes.
-            t_gate_2 (float): Duration of the second qubit frequency change.
-        Returns:
-            H_polaron (Qobj): The polaron Hamiltonian at time t.
-        """
-
-        self.H1 = -0.5 * self.w1_t(t, t1, t_gate_1) * self.sigmaz_1
-        self.H2 = -0.5 * self.w2_t(t, t2, t_gate_2) * self.sigmaz_2
-
-        #build polaron transformation Hamiltonian
-        self.H_change = self.H1 + self.H2 + self.H_vibrational + self.H_qubit_vibrational_coupling + self.H_cav
-        self.values, self.vectors = self.H_change.eigenstates()
-
-        #add cavity Hamiltonian and qubit-cavity coupling to Hamiltonian
-        self.H_change += self.H_qubit_cavity_coupling
-
-        #Build matrix from qubit eigenvectors
-        self.vectors_new = [vec.full() for vec in self.vectors]
-        self.H_vectors = Qobj(np.hstack(self.vectors_new),dims=self.H_change.dims)
-
-        #Perform polaron transformation
-        self.H_polaron = self.H_vectors.dag() * self.H_change * self.H_vectors
-
-        return self.H_polaron
 
 
 
