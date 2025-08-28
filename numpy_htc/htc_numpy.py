@@ -50,11 +50,17 @@ class HTC_Numpy:
         self.n_vib_per_qubit = params.get('n_vib_per_qubit', 2)
 
         # --- Uncoupled basis parameters ---
-        self.coupling_cavity_qubit = params.get('coupling_cavity_qubit', 1.0)
+        self.lambda_value = params.get('lambda_value', 1.0)
         self.freq_cavity = params.get('freq_cavity', 1.0)
         self.freq_qubit = params.get('freq_qubit', 1.0)
         self.freq_vib_qubit = params.get('freq_vib_qubit', 0.1)
         self.coupling_qubit_vib = params.get('coupling_qubit_vib', 0.0)
+        self.qubit_dipole_values = params.get('qubit_dipole_values', [1.0, 1.0, 1.0]) # [μ_gg, μ_eg, μ_ee]
+        self.qubit_dipole_matrix = np.array([[self.qubit_dipole_values[0], self.qubit_dipole_values[1]],
+                                             [self.qubit_dipole_values[1], self.qubit_dipole_values[2]]])
+        
+
+        #
 
         # --- Polaritonic basis parameters ---
         self.polariton_energies = params.get(
@@ -79,18 +85,14 @@ class HTC_Numpy:
         ) = self.polariton_vib_frequencies
 
         self.polariton_vib_couplings = params.get(
-            'polariton_vib_couplings', [0.0] * 4
+            'polariton_vib_couplings', [0.0] * 3
         )
         (
-            self.coupling_vib_pol1,
-            self.coupling_vib_pol2,
-            self.coupling_vib_pol3,
-            self.coupling_vib_pol4
+            self.coupling_vib_pol12,
+            self.coupling_vib_pol13,
+            self.coupling_vib_pol14
         ) = self.polariton_vib_couplings
 
-        self.coupling_vib_polaritonic = params.get(
-            'coupling_vib_polaritonic', 0.0
-        )
 
 
 
@@ -98,20 +100,20 @@ class HTC_Numpy:
         self.sub_dims = [self.dim_cavity] + [self.dim_qubit, self.dim_vib] * self.n_qubits
         self.dim = np.prod(self.sub_dims)
         print(f"Total Hilbert space dimension: {self.dim}")
-        print(f"coupling strength g: {self.g}")
+        print(f"cavity coupling λ: {self.lambda_value}, qubit-vib λ: {self.coupling_qubit_vib}")
         # Build basis labels
         self.labels = self._build_labels()
 
     # ------------------------------
-    # Basis and labels
+    # Basis and labels for uncoupled basis
     # ------------------------------
     def _build_labels(self):
-        cav_labels   = [f"{n}" for n in range(self.cav_dim)]
-        qubit_labels = ["g", "e"] if self.qubit_dim == 2 else [str(i) for i in range(self.qubit_dim)]
-        vib_labels   = [f"{n}" for n in range(self.vib_dim)]
+        cav_labels   = [f"{n}" for n in range(self.dim)]
+        qubit_labels = ["g", "e"] if self.dim_qubit == 2 else [str(i) for i in range(self.dim_qubit)]
+        vib_labels   = [f"{n}" for n in range(self.dim_vib)]
 
         labels = []
-        if self.n_qubits == 2 and self.n_vib == 2:
+        if self.n_qubits == 2 and self.n_vib_per_qubit * self.n_qubits == 2:
             # loop explicitly in the correct order
             for cav in cav_labels:
                 for q1 in qubit_labels:
@@ -120,7 +122,7 @@ class HTC_Numpy:
                             for v2 in vib_labels:
                                 label = f"|{cav}, {q1}, {v1}, {q2}, {v2}>"
                                 labels.append(label)
-        elif self.n_qubits == 1 and self.n_vib == 1:
+        elif self.n_qubits == 1 and self.n_vib_per_qubit * self.n_qubits == 1:
             for cav in cav_labels:
                 for q1 in qubit_labels:
                     for v1 in vib_labels:
@@ -143,23 +145,76 @@ class HTC_Numpy:
     def build_polariton_hamiltonian(self):
         """
         Build the Hamiltonian in the polaritonic basis without vibrational modes.
-        The basis states are |g,0>, |LP>, |UP>, |e,1>.
+        The basis states are |pol1>, |pol2>, |pol3>, |pol4>.
         """
-        H = self.E_pol1 * self.build_projector(self.dim, 0, 0)  # |g,0><g,0|
-        H += self.E_pol2 * self.build_projector(self.dim, 1, 1)  # |LP><LP|
-        H += self.E_pol3 * self.build_projector(self.dim, 2, 2)  # |UP><UP|
-        H += self.E_pol4 * self.build_projector(self.dim, 3, 3)  # |e,1><e,1|
+        pol_dim = len(self.polariton_energies)
+        H = self.energy_pol1 * self.build_projector(pol_dim, 0, 0)  # |pol1><pol1|
+        H += self.energy_pol2 * self.build_projector(pol_dim, 1, 1)  # |pol2><pol2|
+        H += self.energy_pol3 * self.build_projector(pol_dim, 2, 2)  # |pol3><pol3|
+        H += self.energy_pol4 * self.build_projector(pol_dim, 3, 3)  # |pol4><pol4|
 
         return H  
     
     def build_polariton_vibrational_hamiltonian(self):
         """
         Build the Hamiltonian according to
-        H_pol-vib = |g,0><g,0| \otimes omega_g0 b^+ b
-                    + |LP><LP| \otimes omega_LP b^+ b
-                    + |UP><UP| \otimes omega_UP b^+ b
-                    + |e,1><e,1| \otimes omega_e1 b^+ b
+        H_pol-vib = |pol1><pol1| ω_v,1 b†b
+                  + |pol2><pol2| ω_v,2 b†b
+                  + |pol3><pol3| ω_v,3 b†b
+                  + |pol4><pol4| ω_v,4 b†b
+        where b†b are the creation and annihilation operators for the vibrational modes on each qubit.
         """
+        # build b†b operator for vibrational mode
+        b_dagger = self.creation(self.dim_vib)
+        b = self.annihilation(self.dim_vib)
+        n_vib = b_dagger @ b  # number operator
+
+        pol_dim = len(self.polariton_energies)
+        # |pol1><pol1| projector
+        pol1_proj = self.build_projector(pol_dim, 0, 0)
+        # |pol2><pol2| projector
+        pol2_proj = self.build_projector(pol_dim, 1, 1)
+        # |pol3><pol3| projector
+        pol3_proj = self.build_projector(pol_dim, 2, 2)
+        # |pol4><pol4| projector
+        pol4_proj = self.build_projector(pol_dim, 3, 3)
+
+        H  = np.kron(pol1_proj, self.freq_vib_pol1 * n_vib)
+        H += np.kron(pol2_proj, self.freq_vib_pol2 * n_vib)
+        H += np.kron(pol3_proj, self.freq_vib_pol3 * n_vib)
+        H += np.kron(pol4_proj, self.freq_vib_pol4 * n_vib)
+
+        return H
+    
+    def build_polariton_vib_coupling(self):
+        """
+        Build the vibronic coupling Hamiltonian in the polaritonic basis.
+        H_coupling = λ_12 |pol1><pol2| (b† + b)
+                   + λ_13 |pol1><pol3| (b† + b)
+                   + λ_14 |pol1><pol4| (b† + b)
+                   + h.c.
+        where λ_ij are the vibronic couplings between polaritonic states.
+        """
+        # build (b† + b) operator for vibrational mode
+        b_dagger = self.creation(self.dim_vib)
+        b = self.annihilation(self.dim_vib)
+        vib_coupling_op = b_dagger + b
+
+        pol_dim = len(self.polariton_energies)
+        H = self.coupling_vib_pol12 * (
+            np.kron(self.build_projector(pol_dim, 0, 1), vib_coupling_op) + 
+            np.kron(self.build_projector(pol_dim, 1, 0), vib_coupling_op) 
+        )
+        H += self.coupling_vib_pol13 * (
+            np.kron(self.build_projector(pol_dim, 0, 2), vib_coupling_op) +
+            np.kron(self.build_projector(pol_dim, 2, 0), vib_coupling_op)
+        )
+        H += self.coupling_vib_pol14 * (
+            np.kron(self.build_projector(pol_dim, 0, 3), vib_coupling_op) + 
+            np.kron(self.build_projector(pol_dim, 3, 0), vib_coupling_op) 
+        )
+
+        return H
 
 
 
