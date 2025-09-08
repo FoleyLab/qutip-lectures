@@ -47,17 +47,20 @@ class HTC_Numpy:
         self.dim_cavity = params.get('dim_cavity', 2)
         self.dim_vib = params.get('dim_vib', 2)
         self.n_qubits = params.get('n_qubits', 2)
-        self.n_vib_per_qubit = params.get('n_vib_per_qubit', 2)
+        self.n_vib_per_qubit = params.get('n_vib_per_qubit', 1)
+        self.n_vib_per_cavity = params.get('n_vib_per_cavity', 1)
 
-        # --- Uncoupled basis parameters ---
-        self.lambda_value = params.get('lambda_value', 1.0)
+        # --- Uncoupled basis parameters (incomplete) ---
         self.freq_cavity = params.get('freq_cavity', 1.0)
+        self.cavity_lambda = params.get('cavity_lambda', 0.1)  # Cavity displacement
         self.freq_qubit = params.get('freq_qubit', 1.0)
         self.freq_vib_qubit = params.get('freq_vib_qubit', 0.1)
-        self.coupling_qubit_vib = params.get('coupling_qubit_vib', 0.0)
+        self.freq_vib_cavity = params.get('freq_vib_cavity', 0.1)
         self.qubit_dipole_values = params.get('qubit_dipole_values', [1.0, 1.0, 1.0]) # [μ_gg, μ_eg, μ_ee]
         self.qubit_dipole_matrix = np.array([[self.qubit_dipole_values[0], self.qubit_dipole_values[1]],
                                              [self.qubit_dipole_values[1], self.qubit_dipole_values[2]]])
+        
+        self.qubit_d_matrix = self.cavity_lambda * self.qubit_dipole_matrix
         
 
         #
@@ -84,23 +87,17 @@ class HTC_Numpy:
             self.freq_vib_pol4
         ) = self.polariton_vib_frequencies
 
-        self.polariton_vib_couplings = params.get(
-            'polariton_vib_couplings', [0.0] * 3
-        )
-        (
-            self.coupling_vib_pol12,
-            self.coupling_vib_pol13,
-            self.coupling_vib_pol14
-        ) = self.polariton_vib_couplings
 
 
 
 
-        # ordering: [cavity, q1, v1, q2, v2, ...]
-        self.sub_dims = [self.dim_cavity] + [self.dim_qubit, self.dim_vib] * self.n_qubits
+        # ordering: [q1, c, q2, v1, vc, v2] 
+        self.sub_dims = [self.dim_qubit, self.dim_cavity, self.dim_qubit, self.dim_vib, self.dim_vib, self.dim_vib]
         self.dim = np.prod(self.sub_dims)
         print(f"Total Hilbert space dimension: {self.dim}")
-        print(f"cavity coupling λ: {self.lambda_value}, qubit-vib λ: {self.coupling_qubit_vib}")
+        print(f"cavity coupling λ: {self.cavity_lambda}")
+        print(f"qubit dipole matrix:\n{self.qubit_d_matrix}")
+        print(f"Qubit frequency is {self.freq_qubit}, cavity frequency is {self.freq_cavity}, vib frequency is {self.freq_vib_qubit}")
         # Build basis labels
         self.labels = self._build_labels()
 
@@ -225,7 +222,7 @@ class HTC_Numpy:
     def represent_basis_in_eigenbasis(self, basis_labels, eigvecs, energies=None, tol=1e-6):
         """
         For each original basis state |cav, q1, v1, q2, v2>, print
-        its expansion in the eigenbasis, |cav_j, q1_j, v1_j, q2_j, v2_j> = sum_i c_{j,i} |\psi_i>,
+        its expansion in the eigenbasis, |cav_j, q1_j, v1_j, q2_j, v2_j> = sum_i c_{j,i} |psi_i>,
         where c_{j,i} = <psi_i|cav_j, q1_j, v1_j, q2_j, v2_j> = conj(eigvecs[j,i)
 
         Parameters:
