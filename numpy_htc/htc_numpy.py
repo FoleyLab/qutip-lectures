@@ -1,5 +1,6 @@
 import numpy as np
 from itertools import product
+from typing import Literal, Tuple
 
 class HTC_Numpy:
     def __init__(self, params): 
@@ -92,6 +93,15 @@ class HTC_Numpy:
         
         # d matrix for qubit-cavity coupling
         self.qubit_d_matrix = self.cavity_lambda * self.qubit_dipole_matrix
+        self.g_coupling = np.sqrt(self.freq_cavity / 2) * self.qubit_d_matrix[0, 1] # coupling strength g = sqrt(ω_c/2) * μ_eg
+
+        # characteristic timescales based on coupling strength
+        self.T_1 = np.pi / (4 * np.abs(self.g_coupling))
+        self.T_2 = 2 * np.pi / (4 * np.abs(self.g_coupling))
+
+        print("Characteristic timescales:")
+        print(f"T_1 = {self.T_1}, T_2 = {self.T_2}")
+        print(f"Qubit-cavity coupling strength g = {self.g_coupling}")
         
         # --- Polaritonic basis parameters ---
         self.polariton_energies = params.get(
@@ -176,11 +186,14 @@ class HTC_Numpy:
         state_b = self.basis_state(dim, index_b)
         return state_a @ state_b.T.conj()
     
-    def build_polariton_hamiltonian(self):
+    def build_polariton_hamiltonian(self, qubit: Literal[1, 2] = 1):
         """
         Build the Hamiltonian in the polaritonic basis without vibrational modes.
         The basis states are |pol1>, |pol2>, |pol3>, |pol4>.
         """
+        if qubit not in (1, 2):
+            raise ValueError("qubit must be 1 or 2")
+        
         pol_dim = len(self.polariton_energies)
         H = self.energy_pol1 * self.build_projector(pol_dim, 0, 0)  # |pol1><pol1|
         H += self.energy_pol2 * self.build_projector(pol_dim, 1, 1)  # |pol2><pol2|
@@ -189,11 +202,15 @@ class HTC_Numpy:
 
         self.H_polariton_local = np.copy(H)
 
-        # embed into full Hilbert space: H ⊗ I_qubit ⊗ I_vib ⊗ I_vib
-        self.H_polariton_composite = self._tensor(H, self.id_qubit, self.id_vib, self.id_vib)
-        return self.H_polariton_composite  
+        if qubit == 1:
+            self.H_polariton1_composite = self._tensor(H, self.id_qubit, self.id_vib, self.id_vib)
+            return self.H_polariton1_composite
+        else:
+            self.H_polariton2_composite = self._tensor(self.id_qubit, H, self.id_vib, self.id_vib)
+            return self.H_polariton2_composite
+ 
     
-    def build_polariton_vibrational_hamiltonian(self):
+    def build_polariton_vibrational_hamiltonian(self, qubit: Literal[1, 2] = 1):
         """
         Build the Hamiltonian according to
         H_pol-vib = |pol1><pol1| ω_v,1 b†b
@@ -203,6 +220,8 @@ class HTC_Numpy:
         where b†b are the creation and annihilation operators for the vibrational mode of qubit 1.
         This needs to be embedded into the full Hilbert space.
         """
+        if qubit not in (1, 2):
+            raise ValueError("qubit must be 1 or 2")
         # build b†b operator for vibrational mode
         b_dagger = self.creation(self.dim_vib)
         b = self.annihilation(self.dim_vib)
@@ -218,23 +237,42 @@ class HTC_Numpy:
         # |pol4><pol4| projector
         pol4_proj = self.build_projector(pol_dim, 3, 3)
 
-        H  = self.freq_vib_pol1 * self._tensor(pol1_proj, self.id_qubit, n_vib, self.id_vib)
-        H += self.freq_vib_pol2 * self._tensor(pol2_proj, self.id_qubit, n_vib, self.id_vib)
-        H += self.freq_vib_pol3 * self._tensor(pol3_proj, self.id_qubit, n_vib, self.id_vib)
-        H += self.freq_vib_pol4 * self._tensor(pol4_proj, self.id_qubit, n_vib, self.id_vib)
+        if qubit == 1:
+            H  = self.freq_vib_pol1 * self._tensor(pol1_proj, self.id_qubit, n_vib, self.id_vib)
+            H += self.freq_vib_pol2 * self._tensor(pol2_proj, self.id_qubit, n_vib, self.id_vib)
+            H += self.freq_vib_pol3 * self._tensor(pol3_proj, self.id_qubit, n_vib, self.id_vib)
+            H += self.freq_vib_pol4 * self._tensor(pol4_proj, self.id_qubit, n_vib, self.id_vib)
+            self.H_polariton1_vibrational = np.copy(H)
+            return H
 
-        self.H_polariton_vibrational = np.copy(H)
-        return H
+        else:
+            H = self.freq_vib_pol1 * self._tensor(self.id_qubit, pol1_proj, self.id_vib, n_vib)
+            H += self.freq_vib_pol2 * self._tensor(self.id_qubit, pol2_proj, self.id_vib, n_vib)
+            H += self.freq_vib_pol3 * self._tensor(self.id_qubit, pol3_proj, self.id_vib, n_vib)
+            H += self.freq_vib_pol4 * self._tensor(self.id_qubit, pol4_proj, self.id_vib, n_vib)
+            self.H_polariton2_vibrational = np.copy(H)
+            return H
+        
     
-    def build_polariton_vib_coupling(self):
+    def build_polariton_vib_coupling(self, qubit: Literal[1, 2] = 1):
         """
         Build the vibronic coupling Hamiltonian in the polaritonic basis.
+        if qubit=1, the vibrational mode is on qubit 1; if qubit=2, the vibrational mode is on qubit 2.
+        The Hamiltonian is given by for qubit=1:
         H_coupling = λ_12 |pol1><pol2| x I_q2 x (b† + b) x I_v2
                    + λ_13 |pol1><pol3| x I_q2 x (b† + b) x I_v2
                    + λ_14 |pol1><pol4| x I_q2 x (b† + b) x I_v2   
                    + h.c.
+        and for qubit=2:
+        H_coupling = λ_12 I_q1 x |pol1><pol2| x I_v1 x (b† + b)
+                   + λ_13 I_q1 x |pol1><pol3| x I_v1 x (b† + b)
+                   + λ_14 I_q1 x |pol1><pol4| x I_v1 x (b† + b)   
+                   + h.c.
         where λ_ij are the vibronic couplings between polaritonic states.
         """
+        if qubit not in (1, 2):
+            raise ValueError("qubit must be 1 or 2")
+        
         # build (b† + b) operator for vibrational mode
         b_dagger = self.creation(self.dim_vib)
         b = self.annihilation(self.dim_vib)
@@ -248,54 +286,79 @@ class HTC_Numpy:
         _proj_12 = self.build_projector(pol_dim, 0, 1)  # |pol1><pol2|
         _proj_13 = self.build_projector(pol_dim, 0, 2)  # |pol1><pol3|
         _proj_14 = self.build_projector(pol_dim, 0, 3)  # |pol1><pol4|
+        if qubit == 1:
+            H = self.polariton_vib_coupling_12 * self._tensor(_proj_12, self.id_qubit, _sub_vib_coupling_op, self.id_vib)
+            H += self.polariton_vib_coupling_13 * self._tensor(_proj_13, self.id_qubit, _sub_vib_coupling_op, self.id_vib)    
+            H += self.polariton_vib_coupling_14 * self._tensor(_proj_14, self.id_qubit, _sub_vib_coupling_op, self.id_vib)    
+            # add hermitian conjugate
+            H += self.polariton_vib_coupling_12 * self._tensor(_proj_12.T.conj(), self.id_qubit, _sub_vib_coupling_op, self.id_vib)   
+            H += self.polariton_vib_coupling_13 * self._tensor(_proj_13.T.conj(), self.id_qubit, _sub_vib_coupling_op, self.id_vib)       
+            H += self.polariton_vib_coupling_14 * self._tensor(_proj_14.T.conj(), self.id_qubit, _sub_vib_coupling_op, self.id_vib)
+            self.H_polariton1_vib_coupling = np.copy(H)
+            return H
 
-        H = self.polariton_vib_coupling_12 * self._tensor(_proj_12, self.id_qubit, _sub_vib_coupling_op, self.id_vib)
-        H += self.polariton_vib_coupling_13 * self._tensor(_proj_13, self.id_qubit, _sub_vib_coupling_op, self.id_vib)    
-        H += self.polariton_vib_coupling_14 * self._tensor(_proj_14, self.id_qubit, _sub_vib_coupling_op, self.id_vib)    
-        # add hermitian conjugate
-        H += self.polariton_vib_coupling_12 * self._tensor(_proj_12.T.conj(), self.id_qubit, _sub_vib_coupling_op, self.id_vib)   
-        H += self.polariton_vib_coupling_13 * self._tensor(_proj_13.T.conj(), self.id_qubit, _sub_vib_coupling_op, self.id_vib)       
-        H += self.polariton_vib_coupling_14 * self._tensor(_proj_14.T.conj(), self.id_qubit, _sub_vib_coupling_op, self.id_vib)   
+        else:
+            H = self.polariton_vib_coupling_12 * self._tensor(self.id_qubit, _proj_12, self.id_vib, _sub_vib_coupling_op)
+            H += self.polariton_vib_coupling_13 * self._tensor(self.id_qubit, _proj_13, self.id_vib, _sub_vib_coupling_op)    
+            H += self.polariton_vib_coupling_14 * self._tensor(self.id_qubit, _proj_14, self.id_vib, _sub_vib_coupling_op)    
+            # add hermitian conjugate
+            H += self.polariton_vib_coupling_12 * self._tensor(self.id_qubit, _proj_12.T.conj(), self.id_vib, _sub_vib_coupling_op)   
+            H += self.polariton_vib_coupling_13 * self._tensor(self.id_qubit, _proj_13.T.conj(), self.id_vib, _sub_vib_coupling_op)       
+            H += self.polariton_vib_coupling_14 * self._tensor(self.id_qubit, _proj_14.T.conj(), self.id_vib, _sub_vib_coupling_op)
+            self.H_polariton2_vib_coupling = np.copy(H)
+            return H
 
-        self.H_polariton_vib_coupling = np.copy(H)
-        return H
     
-    def build_polariton_transformation(self):
+    def build_polariton_transformation(self, qubit: Literal[1, 2] = 1, dse=True):
         """
-        Build the transformation matrix from the uncoupled basis to the polaritonic basis.
-        The transformation is defined by the polaritonic states in terms of the uncoupled states.
-        For simplicity, we assume a fixed transformation here.
+        Build the transformation to the polaritonic basis for one qubit coupled to the cavity.
+        Parameters
+        ----------
+        qubit : int
+            Which qubit to couple to the cavity (1 or 2).
+            
+        Returns
+        -------
+        energies : np.ndarray
+            Eigenvalues of the polaritonic Hamiltonian.
+        eigvecs : np.ndarray
+            Eigenvectors of the polaritonic Hamiltonian as columns.
         """
-        # build local qubit Hamiltonian first
-        H_q1 = self.build_local_qubit_hamiltonian()
 
-        # build local cavity Hamiltonian
+        if qubit not in (1, 2):
+            raise ValueError("qubit must be 1 or 2")
+
+        H_q = self.build_local_qubit_hamiltonian()
         H_c = self.build_local_cavity_hamiltonian()
-
-        # build b and b† operators for cavity mode
         b_dagger = self.creation(self.dim_cavity)
         b = self.annihilation(self.dim_cavity)
 
-        # add bilinear coupling
-        H_blc = -np.sqrt(self.freq_cavity / 2) * np.kron(self.qubit_d_matrix, (b_dagger + b))
+        if qubit == 1:
+            H_blc = -np.sqrt(self.freq_cavity / 2) * np.kron(self.qubit_d_matrix, (b_dagger + b))
+            if dse:
+                H_dse = 0.5 * np.kron(self.qubit_d_matrix @ self.qubit_d_matrix, np.eye(self.dim_cavity))
+            else:
+                H_dse = np.zeros_like(H_blc)
 
-        # add dipole self-energy term
-        H_dse = 1 / 2 * np.kron(self.qubit_d_matrix @ self.qubit_d_matrix, np.eye(self.dim_cavity))
+            self.H_PF1_local = np.kron(H_q, self.id_cavity) + np.kron(self.id_qubit, H_c) + H_blc + H_dse
+            self.H_PF1_composite = self._tensor(self.H_PF1_local, self.id_qubit, self.id_vib, self.id_vib)
+            energies, eigvecs = np.linalg.eigh(self.H_PF1_composite)
+            self.U_polariton1 = eigvecs.copy()
+            self.H_PF1_Transformed = np.diag(energies)
+        else:
+            H_blc = -np.sqrt(self.freq_cavity / 2) * np.kron((b_dagger + b), self.qubit_d_matrix)
+            if dse:
+                H_dse = 0.5 * np.kron(np.eye(self.dim_cavity), self.qubit_d_matrix @ self.qubit_d_matrix)
+            else:
+                H_dse = np.zeros_like(H_blc)
+            self.H_PF2_local = np.kron(H_c, self.id_qubit) + np.kron(self.id_cavity, H_q) + H_blc + H_dse
+            self.H_PF2_composite = self._tensor(self.id_qubit, self.H_PF2_local, self.id_vib, self.id_vib)
+            energies, eigvecs = np.linalg.eigh(self.H_PF2_composite)
+            self.U_polariton2 = eigvecs.copy()
+            self.H_PF2_Transformed = np.diag(energies)
 
-        # local H_PF
-        self.H_PF_local = np.kron(H_q1, self.id_cavity) + np.kron(self.id_qubit, H_c) + H_blc + H_dse
-        # embed into full Hilbert space: H ⊗ I_qubit ⊗ I_vib ⊗ I_vib
-        self.H_PF_composite = self._tensor(self.H_PF_local, self.id_qubit, self.id_vib, self.id_vib)
+        return eigvecs
 
-        # diagonalize to generate U matrix on full Hilbert space
-        energies, eigvecs = np.linalg.eigh(self.H_PF_composite)
-
-        self.U_polariton = np.copy(eigvecs)
-
-        # build matrix of diagonals from energies
-        self.H_PF_Transformed = np.diag(energies)
-
-        return self.U_polariton
 
     
     def build_local_qubit_hamiltonian(self):
@@ -324,42 +387,63 @@ class HTC_Numpy:
         self.H_cavity_local = np.copy(H)
         return H
     
-    def build_qubit2_hamiltonian(self):
+    def build_qubit_hamiltonian(self, qubit: Literal[1, 2] = 1):
         """
         Build the Hamiltonian for the second qubit in the uncoupled basis.
         H_qubit2 = (ω_q / 2) σ_z
         where σ_z is the Pauli Z operator for the qubit.
         """
+        if qubit not in (1, 2):
+            raise ValueError("qubit must be 1 or 2")
         H = -(self.freq_qubit / 2) * self.sigma_z()
 
-        # embed into full Hilbert space: I_qubit ⊗ I_cavity ⊗ σ_z ⊗ I_vib ⊗ I_vib
-        H = self._tensor(self.id_qubit, self.id_cavity, H, self.id_vib, self.id_vib)
+        if qubit==1:
+            H = self._tensor(H, self.id_cavity, self.id_qubit, self.id_vib, self.id_vib)
+            self.H_qubit1_composite = np.copy(H)
+            return H
 
-        self.H_qubit2_composite = np.copy(H)
-        return H
+        else:
+            H = self._tensor(self.id_qubit, self.id_cavity, H, self.id_vib, self.id_vib)
+            self.H_qubit2_composite = np.copy(H)
+            return H
+
     
-    def build_qubit2_vibrational_hamiltonian(self):
+    def build_qubit_vibrational_hamiltonian(self, qubit: Literal[1, 2] = 1):
         """
         Build the vibrational Hamiltonian for the qubits in the uncoupled basis.
         H_vib = ω_v b†b
         where b†b is the number operator for the vibrational mode.
         """
+        if qubit not in (1, 2):
+            raise ValueError("qubit must be 1 or 2")
         # build b†b operator for vibrational mode
         b_dagger = self.creation(self.dim_vib)
         b = self.annihilation(self.dim_vib)
         n_vib = b_dagger @ b  # number operator
 
-        # embed into full Hilbert space: I_qubit ⊗ I_cavity ⊗ I_qubit ⊗ I_vib ⊗ b†b
-        H = self.freq_vib_qubit * self._tensor(self.id_qubit, self.id_cavity, self.id_qubit, self.id_vib, n_vib)
-        self.H_qubit2_vibrational = np.copy(H)
-        return H
+        if qubit==1:
+            # embed into full Hilbert space: I_qubit ⊗ I_cavity ⊗ I_qubit ⊗ b†b ⊗ I_vib
+            H = self.freq_vib_qubit * self._tensor(self.id_qubit, self.id_cavity, self.id_qubit, n_vib, self.id_vib)
+            self.H_qubit1_vibrational = np.copy(H)
+            return H
+        
+        else:
+            # embed into full Hilbert space: I_qubit ⊗ I_cavity ⊗ I_qubit ⊗ I_vib ⊗ b†b
+            H = self.freq_vib_qubit * self._tensor(self.id_qubit, self.id_cavity, self.id_qubit, self.id_vib, n_vib)
+            self.H_qubit2_vibrational = np.copy(H)
+            return H
+        
+
     
-    def build_qubit2_vib_coupling(self):
+    def build_qubit_vib_coupling(self, qubit: Literal[1, 2] = 1):
         """
         Build the qubit-vibrational coupling Hamiltonian in the uncoupled basis.
         H_coupling = λ_q \sigma^+ \sigma^- (b† + b)
         where λ_q is the qubit-vibration coupling strength.
         """
+        if qubit not in (1, 2):
+            raise ValueError("qubit must be 1 or 2")
+        
         # build (b† + b) operator for vibrational mode
         b_dagger = self.creation(self.dim_vib)
         b = self.annihilation(self.dim_vib)
@@ -369,12 +453,17 @@ class HTC_Numpy:
         sigma_plus = self.sigma_plus()
         sigma_minus = self.sigma_minus()
         qubit_proj = sigma_plus @ sigma_minus
+
+        if qubit == 1:
+            # build coupling term
+            H = self.qubit_vib_coupling * self._tensor(qubit_proj, self.id_cavity, self.id_qubit, vib_coupling_op, self.id_vib)
+            self.H_qubit1_vib_coupling = np.copy(H)
+            return H
         
-        # build coupling term
-        H = self.qubit_vib_coupling * self._tensor(self.id_qubit, self.id_cavity, qubit_proj, self.id_vib, vib_coupling_op)
-        
-        self.H_qubit2_vib_coupling = np.copy(H)
-        return H
+        else:
+            H = self.qubit_vib_coupling * self._tensor(self.id_qubit, self.id_cavity, qubit_proj, self.id_vib, vib_coupling_op)
+            self.H_qubit2_vib_coupling = np.copy(H)
+            return H
 
 
     def index_of(self, label):
