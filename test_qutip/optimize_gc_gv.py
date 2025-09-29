@@ -74,7 +74,7 @@ H_q1 = tensor(-omega_q/2 * sz, Iq, Iv, Iv, Ic)
 H_q2 = tensor(Iq, -omega_q/2 * sz, Iv, Iv, Ic)
 H_v1 = tensor(Iq, Iq, omega_v * nc, Iv, Ic)
 H_v2 = tensor(Iq, Iq, Iv, omega_v * nc, Ic)
-H_cav = tensor(Iq, Iq, Iv, Iv, omega_v * nc)
+H_cav = tensor(Iq, Iq, Iv, Iv, omega_c * nc)
 H_bare_total = H_q1 + H_q2 + H_v1 + H_v2 + H_cav
 
 
@@ -145,8 +145,8 @@ def objective(params):
 #gc_min = 10 * gv_max
 #gc_max = 500 * gv_max
 
-gc_min = 0.100
-gc_max = 0.200
+gc_min = 0.001
+gc_max = 0.100
 
 # min gv to get gc/gv ~ 230
 gv_min = gc_min / 250
@@ -154,7 +154,7 @@ gv_max = gc_max / 10
 bounds = [(gc_min, gc_max), (gv_min, gv_max)]
 
 # Step 1: Global search with Differential Evolution
-de_result = differential_evolution(objective, bounds,init="random", maxiter=100, popsize=500, polish=False)
+de_result = differential_evolution(objective, bounds,init="random", maxiter=100, popsize=100, polish=True)
 
 print("\nGlobal (Differential Evolution) result:")
 print(f"gc ≈ {de_result.x[0]:.5f}, gv ≈ {de_result.x[1]:.5f}")

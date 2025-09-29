@@ -1,0 +1,11 @@
+
+Global (Differential Evolution) result:
+gc ≈ 0.02771, gv ≈ 0.00000
+gc / gv ≈ 6413.6060
+Fidelity ≈ 1.000000, Concurrence ≈ 0.999999
+
+Local (L-BFGS-B) refinement:
+gc* = 0.02771, gv* = 0.00000
+gc* / gv* = 6413.6060
+Fidelity* = 1.000000, Concurrence* = 0.999999
+Objective (αF + βC)* = 0.999999
