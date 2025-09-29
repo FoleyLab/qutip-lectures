@@ -34,6 +34,7 @@ def read_json_to_dict(filename: str) -> dict:
 # Load system parameters (LiH example)
 # -----------------------------------------------------------
 LiH_params = read_json_to_dict("LiH_params.json")
+mu_eg = LiH_params["qubit_1_dipole_moments"]["mu_eg"]
 
 Nf = 4   # bosonic cutoff (increase if needed)
 # local operators
@@ -69,9 +70,10 @@ rho_qubits_ideal = ket2dm(
 # -----------------------------------------------------------
 # Parameter grids
 # -----------------------------------------------------------
-
+lamvals = np.linspace(0.01, 0.1, 11)  # qubit–vibration coupling
+#gc_values = np.sqrt(omega_q / 2) * lamvals * np.abs(mu_eg)
 gc_values = np.linspace(0.002, 0.125, 10)   # qubit–cavity coupling
-gv_values = np.linspace(0.0005, 0.02,  50)   # qubit–vibration coupling
+gv_values = np.linspace(0.0001, 0.02,  100)   # qubit–vibration coupling
 
 # time discretization
 tlist = np.linspace(0, 1400, 5000)
