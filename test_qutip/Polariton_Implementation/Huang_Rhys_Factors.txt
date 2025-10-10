@@ -1,0 +1,37 @@
+\begin{table*}[ht]
+\centering
+\caption{Vibrational frequencies and vibronic coupling parameters for various cavity coupling strengths $\lambda_z$.
+Calculations leading to these results are here: \href{https://github.com/FoleyLab/data_repository/blob/safe_vibronic_and_casscf/Vibronic_Coupling_results/LiH/vibronic_coupling_plotter_lih_casscf.ipynb}{HERE}
+}
+\label{tab:vibronic_results}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{c c c c c}
+\hline\hline
+\textbf{$\lambda_z$} & \textbf{State} & \textbf{Fundamental Frequency (cm$^{-1}$)} & \textbf{Huang-Rhys $S_{g \to \text{X}}$} \\
+\hline
+
+\multirow{3}{*}{0.00} 
+ & Ground State ($S_0$) & 1367.13 & --  \\
+ & Excited State ($S_1$) & 362.33 & 10.56 \\
+\hline
+
+\multirow{3}{*}{0.01} 
+ & Ground State (g) & 1367.69 & --  \\
+ & Lower Polariton (LP) & 352.45 & 10.01 \\
+ & Upper Polariton (UP) & 1522.81 & 0.31  \\
+\hline
+
+\multirow{3}{*}{0.05} 
+ & Ground State (g) & 1380.93 & --  \\
+ & Lower Polariton (LP) & 424.62 & 0.90  \\
+ & Upper Polariton (UP) & 1243.00 & 0.35 \\
+\hline
+
+\multirow{3}{*}{0.10} 
+ & Ground State (g) & 1418.97 & -- \\
+ & Lower Polariton (LP) & 733.50 & 0.55  \\
+ & Upper Polariton (UP) & 1076.94 & 0.60 \\
+\hline\hline
+\end{tabular}
+\end{table*}
+
