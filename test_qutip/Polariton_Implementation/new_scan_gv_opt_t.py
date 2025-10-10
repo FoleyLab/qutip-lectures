@@ -170,8 +170,23 @@ def objective_T(params, gv1, gv2, LiH_params, psi0, rho_qubits_ideal, tlist, Nf,
 
 def scan_gv_grid(LiH_params, psi0, rho_qubits_ideal, tlist, Nf, omega_vib_list,
                  gv1_range=(0.6, 0.9), gv2_range=(0.5, 0.8), n_points=3, target="product"):
-    gv1_vals = np.linspace(*gv1_range, n_points)
-    gv2_vals = np.linspace(*gv2_range, n_points)
+    
+    # going to ignore the gv ranges and hard-code in some logarthmic scaling ranges
+    values_range = np.concatenate([
+        np.linspace(1e-4, 1e-3, 3),
+        np.linspace(1e-3, 1e-2, 3),
+        np.linspace(1e-2, 1e-1, 3),
+        np.linspace(1e-1, 1e0, 3),
+        np.linspace(1e0, 1e1, 3)
+    ])
+
+    gv1_vals = np.unique(values_range)
+    gv2_vals = np.unique(values_range)
+
+    n_points = len(gv1_vals)
+
+    #gv1_vals = np.linspace(*gv1_range, n_points)
+    #gv2_vals = np.linspace(*gv2_range, n_points)
     fidelities = np.zeros((n_points, n_points))
     concurrences = np.zeros_like(fidelities)
 
@@ -180,7 +195,7 @@ def scan_gv_grid(LiH_params, psi0, rho_qubits_ideal, tlist, Nf, omega_vib_list,
         writer.writerow(["gv1", "gv2", "T1", "T2", "Fidelity", "Concurrence"])
         for i, gv1 in enumerate(gv1_vals):
             for j, gv2 in enumerate(gv2_vals):
-                print(f"\n>>> Optimizing for gv1={gv1:.3f}, gv2={gv2:.3f}")
+                print(f"\n>>> Optimizing for gv1={gv1:.3e}, gv2={gv2:.3e}")
                 bounds = [(100, 800), (100, 800)]
                 result_de = differential_evolution(
                     objective_T, bounds,

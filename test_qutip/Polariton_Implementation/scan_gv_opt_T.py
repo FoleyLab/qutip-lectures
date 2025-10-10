@@ -224,8 +224,19 @@ def scan_gv_grid(
     gv1_range=(0.5, 1.0), gv2_range=(0.5, 1.0), n_points=5,
     target="fidelity"
 ):
-    gv1_values = np.linspace(*gv1_range, n_points)
-    gv2_values = np.linspace(*gv2_range, n_points)
+    # going to ignore the gv ranges and hard-code in some logarthmic scaling ranges
+    values_range = np.concatenate([
+        np.linspace(1e-4, 1e-3, 3),
+        np.linspace(1e-3, 1e-2, 3),
+        np.linspace(1e-2, 1e-1, 3),
+        np.linspace(1e-1, 1e0, 3),
+        np.linspace(1e0, 1e1, 3)
+    ])
+
+    #gv1_values = np.linspace(*gv1_range, n_points)
+    #gv2_values = np.linspace(*gv2_range, n_points)
+    gv1_values = np.unique(values_range)
+    gv2_values = np.unique(values_range)
 
     # results
     fidelities = np.zeros((n_points, n_points))
@@ -272,8 +283,8 @@ def scan_gv_grid(
 # -----------------------------------------------------------
 gv1_values, gv2_values, fidelities, concurrences = scan_gv_grid(
     LiH_params, psi_init, rho_qubits_ideal, tlist, Nf, omega_vib_list,
-    gv1_range=(0.6, 0.9), gv2_range=(0.5, 0.8), n_points=4,
-    target="product"   # can be "fidelity", "concurrence", or "product"
+    gv1_range=(0.01, 2.0), gv2_range=(0.01, 2.0), n_points=5,
+    target="fidelity"   # can be "fidelity", "concurrence", or "product"
 )
 
 # -----------------------------------------------------------
@@ -300,37 +311,3 @@ plt.show()
 
 
 
-# -----------------------------------------------------------
-# Load system parameters (LiH example)
-# -----------------------------------------------------------
-LiH_params = read_json_to_dict("LiH_params.json")
-
-# vibrational frequencies for polariton states - to be fixed
-omega_vib_list = [0.006, # omega on gs
-                  0.006, # omega on LP
-                  0.006, # omega on UP
-                  0.006, # omega on S0
-                  0.006, # omega on S1
-                  0.006] # omega on S1 
-
-Nf = 3  # bosonic cutoff
-
-#good_params = [7.74557860e-01, 6.55479084e-01, 6.40516069e-04, 2.85479981e+02, 5.58060919e+02]
-good_params = [7.74e-1, 6.55e-1, 308, 616]
-
-# initial psi
-psi_init = tensor(basis(2,1), basis(Nf,0),
-              basis(2,0), basis(Nf,0), basis(Nf,0))
-
-
-# ideal Bell target
-rho_qubits_ideal = ket2dm(
-    tensor(phasegate(0), phasegate(pi/2)) *
-    sqrtiswap() *
-    tensor(basis(2,1), basis(2,0))
-)
-
-# time discretization
-tlist = np.linspace(0, 1400, 5000)
-
-rf, fid, con = runner(good_params, LiH_params, psi_init, rho_qubits_ideal, tlist, Nf, omega_vib_list)
