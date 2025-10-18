@@ -62,12 +62,12 @@ def build_qubit_vibronic_coupling(omega_list, gv, boson_dim, qubit_number=1):
             op_n = _tensor(Iq_np, Ic_np, Proj_ii, Iv_np, n_np)
         H_vib += omega_list[i] * op_n
 
-    # off-diagonal vibronic coupling: |0><1| + |1><0|
-    Proj_01 = build_projector(Iq_np, 0, 1) + build_projector(Iq_np, 1, 0)
+    # vibronic coupling: |1><1| x (a^+ + a)
+    Proj_11 = build_projector(Iq_np, 1, 1)
     if qubit_number == 1:
-        op_m = _tensor(Proj_01, Ic_np, Iq_np, (a_np + adag_np), Iv_np)
+        op_m = _tensor(Proj_11, Ic_np, Iq_np, (a_np + adag_np), Iv_np)
     else:
-        op_m = _tensor(Iq_np, Ic_np, Proj_01, Iv_np, (a_np + adag_np))
+        op_m = _tensor(Iq_np, Ic_np, Proj_11, Iv_np, (a_np + adag_np))
 
     H_vib_coup = gv * op_m
     qubit_dims = [2, boson_dim, 2, boson_dim, boson_dim]
@@ -108,12 +108,12 @@ def build_qubit_cavity_vibronic_coupling(H_qubit_cavity_coupling, omega_list, gv
         H_vib += omega_list[i] * op_n
 
         if i > 0:
-            Proj_0i = build_projector(vecs, 0, i) + build_projector(vecs, i, 0)
+            #Proj_0i = build_projector(vecs, 0, i) + build_projector(vecs, i, 0)
             if qubit_number == 1:
-                op_c = _tensor(Proj_0i, Iq_np, (a_np + adag_np), Iv_np)
+                op_c = _tensor(Proj_ii, Iq_np, (a_np + adag_np), Iv_np)
             else:
-                op_c = _tensor(Iq_np, Proj_0i, Iv_np, (a_np + adag_np))
-            H_vib_coup += gv_list[i - 1] * op_c  # += (bugfix vs. overwrite)
+                op_c = _tensor(Iq_np, Proj_ii, Iv_np, (a_np + adag_np))
+            H_vib_coup += gv_list[i - 1] * op_c  
 
     qubit_dims = [2, boson_dim, 2, boson_dim, boson_dim]
     return Qobj(H_vib + H_vib_coup, dims=[qubit_dims, qubit_dims])
@@ -255,8 +255,8 @@ def optimize_gate_times(LiH_params, psi_init, rho_qubits_ideal, tlist,
 
     # Reasonable search bounds (broad but finite)
     # You can tighten these if you already know your regime.
-    bounds = [(0.2 * T1_star, 5.0 * T1_star),
-              (0.2 * T2_star, 5.0 * T2_star)]
+    bounds = [(0.2 * T1_star, 1.5 * T1_star),
+              (0.2 * T2_star, 1.5 * T2_star)]
 
     # Make sure tlist extends beyond the latest possible end time
     latest_end = 20.0 + bounds[0][1] + bounds[1][1]
@@ -284,6 +284,7 @@ def optimize_gate_times(LiH_params, psi_init, rho_qubits_ideal, tlist,
     return {
         "T_gate_1_opt": float(T1_opt),
         "T_gate_2_opt": float(T2_opt),
+        "Max Time" : float(tlist[-1]),
         "fidelity_at_opt": float(F_opt),
         "concurrence_at_opt": float(C_opt),
         "nit": int(result.nit),
@@ -316,7 +317,7 @@ def main():
         LiH_params["N_boson"] = int(args.n_boson_override)
 
     # Prepare initial state, ideal target, and tlist
-    Nf = LiH_params.get("N_boson", 4)
+    Nf = LiH_params.get("N_boson", 3)
 
     psi_init = tensor(basis(2,1), basis(Nf,0),
                       basis(2,0), basis(Nf,0), basis(Nf,0))
@@ -340,6 +341,7 @@ def main():
     tmax = args.tmax if args.tmax is not None else tmax_default
 
     tlist = np.linspace(0.0, float(tmax), int(args.nt))
+    
 
     # Run the optimization
     result = optimize_gate_times(LiH_params, psi_init, rho_qubits_ideal, tlist,
@@ -355,6 +357,7 @@ def main():
     print(f"Func evals:        {result['nfev']}")
     print(f"T_gate_1_opt (au): {result['T_gate_1_opt']:.8f}")
     print(f"T_gate_2_opt (au): {result['T_gate_2_opt']:.8f}")
+    print(f"Max Time (a.u.):   {result['Max Time']:.8f}")
     print(f"Fidelity @ opt:    {result['fidelity_at_opt']:.10f}")
     print(f"Concurrence @ opt: {result['concurrence_at_opt']:.10f}")
 

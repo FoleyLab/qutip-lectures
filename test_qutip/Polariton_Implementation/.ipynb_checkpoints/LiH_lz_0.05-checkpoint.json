@@ -11,8 +11,8 @@
     "S_GLP":  0.90,
     "S_GUP":  0.35,
     "lambda_z": 0.01,
-    "N_boson": 5,
-    "Model": "Jaynes-Cummings",
+    "N_boson": 3,
+    "Model": "Pauli-Fierz",
     "qubit_1_dipole_moments": {
         "mu_g": -2.354965266795868,
         "mu_e": 2.0510843691207983,
